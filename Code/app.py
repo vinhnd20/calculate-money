@@ -1,13 +1,12 @@
 from flask import Flask, render_template, request
 import pandas as pd
 import numpy as np
-import re  # Thêm import re để sử dụng biểu thức chính quy
+import re  # To use regular expressions
 
 app = Flask(__name__)
 
-
 def convert_to_csv_url(input_url):
-    # Biểu thức chính quy để tìm FILE_ID và SHEET_ID (gid)
+    # Regex to extract FILE_ID and SHEET_ID (gid)
     match = re.match(r'https://docs.google.com/spreadsheets/d/([^/]+)/.*gid=([\d]+)', input_url)
     if match:
         file_id = match.group(1)
@@ -17,84 +16,78 @@ def convert_to_csv_url(input_url):
     else:
         return None
 
-
 @app.route("/", methods=["GET", "POST"])
 def index():
     result = None
     if request.method == "POST":
         google_sheet_url = request.form.get("sheet_url")
 
-        # Chuyển đổi URL nhập vào thành URL CSV
+        # Convert input URL to CSV URL
         csv_url = convert_to_csv_url(google_sheet_url)
         if not csv_url:
-            result = ["URL không hợp lệ. Vui lòng nhập URL Google Sheets đúng định dạng."]
+            result = ["Invalid URL. Please enter a correct Google Sheets URL."]
             return render_template("index.html", result=result)
 
         try:
-            # Đọc dữ liệu từ Google Sheets
-            df = pd.read_csv(csv_url, nrows=100, usecols=range(11))
+            # Read data from Google Sheets
+            df = pd.read_csv(csv_url, nrows=100, usecols=range(13))
 
-            # In ra tên các cột để kiểm tra
-            print("Tên các cột:", df.columns.tolist())
-
-            # Loại bỏ khoảng trắng thừa trong tên các cột
+            # Strip extra spaces in column names
             df.columns = df.columns.str.strip()
 
-            # Ma trận nợ ban đầu (4 người)
-            matrix = np.zeros((4, 4))
+            # Initial debt matrix (5 people)
+            matrix = np.zeros((5, 5))
 
-            # Danh sách người ứng với các cột (sử dụng chỉ số cột cụ thể)
-            payer_columns = [3, 4, 5, 6]  # Các cột của người trả tiền
-            debtor_columns = [7, 8, 9, 10]  # Các cột của người nợ tiền
+            # Columns corresponding to payers and debtors (now 5 columns)
+            payer_columns = [3, 4, 5, 6, 7]  # Updated for 5 people
+            debtor_columns = [8, 9, 10, 11, 12]  # Updated for 5 people
 
-            # Tên của người theo số thứ tự
-            people = ["Vinh", "VAnh", "HAnh", "Bang"]
+            # List of people names
+            people = ["Vinh", "VAnh", "HAnh", "Bang", "Toi"]  # Added the 5th person
 
-            # Duyệt qua từng hàng trong DataFrame
+            # Loop through rows in the DataFrame
             for idx, row in df.iterrows():
-                # Xác định tổng số tiền của món đồ
-                total_money = df.loc[idx, 'Money']  # Thay 'Money' bằng tên cột thực tế nếu cần
+                # Total amount for the item
+                total_money = df.loc[idx, 'Money']
 
-                # Xác định ai là người trả tiền (các cột từ Vinh đến Bang)
+                # Identify who paid (payer columns from Vinh to Toi)
                 payer = None
-                for i in range(4):
-                    if pd.notna(df.iloc[idx, payer_columns[i]]):  # Sử dụng chỉ số cột thay vì tên
+                for i in range(5):  # Changed to 5 for all people
+                    if pd.notna(df.iloc[idx, payer_columns[i]]):
                         payer = i
                         break
 
                 if payer is None:
-                    continue  # Nếu không có người trả tiền thì bỏ qua
+                    continue  # If no payer is found, skip this row
 
-                # Xác định những người phải chịu tiền (các cột từ Vinh đến Bang ở cuối)
+                # Identify debtors (columns from Vinh to Toi)
                 debtors = []
-                for i in range(4):
-                    if pd.notna(df.iloc[idx, debtor_columns[i]]):  # Sử dụng chỉ số cột thay vì tên
+                for i in range(5):  # Updated to 5 for all people
+                    if pd.notna(df.iloc[idx, debtor_columns[i]]):
                         debtors.append(i)
 
-                # Tính số tiền mỗi người phải trả và làm tròn lên
+                # Calculate each person's share and round it up
                 if debtors:
                     share = total_money / len(debtors)
-                    share = np.ceil(share)  # Làm tròn lên số tiền chia
+                    share = np.ceil(share)  # Round up
                     for debtor in debtors:
                         if debtor != payer:
-                            matrix[payer][debtor] += share  # Người payer nợ các debtor
+                            matrix[payer][debtor] += share
 
-            # Chuẩn bị kết quả
+            # Prepare result for display
             result = []
-            for i in range(4):
-                for j in range(i + 1, 4):  # Duyệt qua mỗi cặp i, j với i < j để tránh lặp lại
+            for i in range(5):
+                for j in range(i + 1, 5):  # Compare each pair i, j where i < j
                     if matrix[j][i] > matrix[i][j]:
                         difference = matrix[j][i] - matrix[i][j]
-                        result.append(f"{people[i]} nợ {people[j]} số tiền: {difference:.1f}")
+                        result.append(f"{people[i]} owes {people[j]}: {difference:.1f}")
                     elif matrix[i][j] > matrix[j][i]:
                         difference = matrix[i][j] - matrix[j][i]
-                        result.append(f"{people[j]} nợ {people[i]} số tiền: {difference:.1f}")
+                        result.append(f"{people[j]} owes {people[i]}: {difference:.1f}")
         except Exception as e:
-            result = [f"Lỗi khi đọc Google Sheets: {str(e)}", f"Tên các cột đọc được: {df.columns.tolist()}"]
+            result = [f"Error reading Google Sheets: {str(e)}"]
 
     return render_template("index.html", result=result)
 
-
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
-
